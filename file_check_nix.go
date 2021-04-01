@@ -3,10 +3,10 @@
 package zapwriter
 
 import (
-	"time"
 	"fmt"
-	"syscall"
 	"os"
+	"syscall"
+	"time"
 )
 
 func (r *FileOutput) doWithCheck(f func()) {

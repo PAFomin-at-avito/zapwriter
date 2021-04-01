@@ -89,7 +89,7 @@ func (r *FileOutput) reopenChecker(exit chan interface{}) {
 	for {
 		select {
 		case <-ticker.C:
-			r.doWithCheck(func(){})
+			r.doWithCheck(func() {})
 		case <-exit:
 			return
 		}
@@ -110,12 +110,12 @@ func (r *FileOutput) reopen() *os.File {
 }
 
 func (r *FileOutput) Write(p []byte) (n int, err error) {
-	r.doWithCheck(func() {n, err = r.f.Write(p)})
+	r.doWithCheck(func() { n, err = r.f.Write(p) })
 	return
 }
 
 func (r *FileOutput) Sync() (err error) {
-	r.doWithCheck(func() {err = r.f.Sync()})
+	r.doWithCheck(func() { err = r.f.Sync() })
 	return
 }
 

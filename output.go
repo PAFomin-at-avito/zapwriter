@@ -3,9 +3,12 @@ package zapwriter
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"sync"
+
+	"go.uber.org/zap/zapcore"
 )
 
 type WriteSyncer interface {
@@ -58,13 +61,21 @@ func (o *output) apply(dsn string) error {
 	} else if u.Path == "stdout" {
 		newOut = os.Stdout
 	} else {
-		if u.Scheme == "" || u.Scheme == "file" {
+		switch u.Scheme {
+		case "", "file":
 			newOut, err = File(u.Path)
 			if err != nil {
 				return err
 			}
 			newCloseable = true
-		} else {
+		case "rsyslog":
+			conn, err := net.Dial("udp", u.Host)
+			if err != nil {
+				return err
+			}
+			newOut = zapcore.AddSync(conn)
+			newCloseable = true
+		default:
 			return fmt.Errorf("unknown scheme %#v", u.Scheme)
 		}
 	}

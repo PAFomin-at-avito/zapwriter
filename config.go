@@ -16,6 +16,7 @@ type Config struct {
 	Encoding         string `toml:"encoding"`          // "json", "console"
 	EncodingTime     string `toml:"encoding-time"`     // "millis", "nanos", "epoch", "iso8601"
 	EncodingDuration string `toml:"encoding-duration"` // "seconds", "nanos", "string"
+	Type             string `toml:"type"`              // for rsyslog: "err" (default), "access"
 }
 
 func NewConfig() Config {
@@ -62,6 +63,20 @@ func (c *Config) encoder() (zapcore.Encoder, zap.AtomicLevel, error) {
 
 	atomicLevel.SetLevel(zapLevel)
 
+	var encoder zapcore.Encoder
+	if u.Scheme == "rsyslog" {
+		encoder, err = c.encoderRsyslog(u)
+	} else {
+		encoder, err = c.encoderLocal(u)
+	}
+	if err != nil {
+		return nil, atomicLevel, err
+	}
+
+	return encoder, atomicLevel, nil
+}
+
+func (c *Config) encoderLocal(u *url.URL) (zapcore.Encoder, error) {
 	encoding := u.Query().Get("encoding")
 	if encoding == "" {
 		encoding = c.Encoding
@@ -89,7 +104,7 @@ func (c *Config) encoder() (zapcore.Encoder, zap.AtomicLevel, error) {
 	case "iso8601", "":
 		encoderTime = zapcore.ISO8601TimeEncoder
 	default:
-		return nil, atomicLevel, fmt.Errorf("unknown time encoding %#v", encodingTime)
+		return nil, fmt.Errorf("unknown time encoding %#v", encodingTime)
 	}
 
 	var encoderDuration zapcore.DurationEncoder
@@ -101,7 +116,7 @@ func (c *Config) encoder() (zapcore.Encoder, zap.AtomicLevel, error) {
 	case "string":
 		encoderDuration = zapcore.StringDurationEncoder
 	default:
-		return nil, atomicLevel, fmt.Errorf("unknown duration encoding %#v", encodingDuration)
+		return nil, fmt.Errorf("unknown duration encoding %#v", encodingDuration)
 	}
 
 	encoderConfig := zapcore.EncoderConfig{
@@ -116,19 +131,80 @@ func (c *Config) encoder() (zapcore.Encoder, zap.AtomicLevel, error) {
 		EncodeDuration: encoderDuration,
 	}
 
-	var encoder zapcore.Encoder
 	switch strings.ToLower(encoding) {
 	case "mixed", "":
-		encoder = NewMixedEncoder(encoderConfig)
+		return NewMixedEncoder(encoderConfig), nil
 	case "json":
-		encoder = zapcore.NewJSONEncoder(encoderConfig)
+		return zapcore.NewJSONEncoder(encoderConfig), nil
 	case "console":
-		encoder = zapcore.NewConsoleEncoder(encoderConfig)
+		return zapcore.NewConsoleEncoder(encoderConfig), nil
 	default:
-		return nil, atomicLevel, fmt.Errorf("unknown encoding %#v", encoding)
+		return nil, fmt.Errorf("unknown encoding %#v", encoding)
+	}
+}
+
+func (c *Config) encoderRsyslog(u *url.URL) (zapcore.Encoder, error) {
+	encodingTime := u.Query().Get("encoding-time")
+	if encodingTime == "" {
+		encodingTime = c.EncodingTime
 	}
 
-	return encoder, atomicLevel, nil
+	encodingDuration := u.Query().Get("encoding-duration")
+	if encodingDuration == "" {
+		encodingDuration = c.EncodingDuration
+	}
+
+	var encoderTime zapcore.TimeEncoder
+
+	switch strings.ToLower(encodingTime) {
+	case "millis":
+		encoderTime = zapcore.EpochMillisTimeEncoder
+	case "nanos":
+		encoderTime = zapcore.EpochNanosTimeEncoder
+	case "epoch":
+		encoderTime = zapcore.EpochTimeEncoder
+	case "iso8601", "":
+		encoderTime = zapcore.ISO8601TimeEncoder
+	default:
+		return nil, fmt.Errorf("unknown time encoding %#v", encodingTime)
+	}
+
+	var encoderDuration zapcore.DurationEncoder
+	switch strings.ToLower(encodingDuration) {
+	case "seconds", "":
+		encoderDuration = zapcore.SecondsDurationEncoder
+	case "nanos":
+		encoderDuration = zapcore.NanosDurationEncoder
+	case "string":
+		encoderDuration = zapcore.StringDurationEncoder
+	default:
+		return nil, fmt.Errorf("unknown duration encoding %#v", encodingDuration)
+	}
+
+	appName := u.Query().Get("app-name")
+	if appName == "" {
+		panic("app-name is required")
+	}
+
+	encoderConfig := zapcore.EncoderConfig{
+		MessageKey:     "msg",
+		LevelKey:       "level",
+		TimeKey:        "timestamp",
+		NameKey:        "logger",
+		CallerKey:      "caller",
+		StacktraceKey:  "stacktrace",
+		EncodeLevel:    zapcore.LowercaseLevelEncoder,
+		EncodeTime:     encoderTime,
+		EncodeDuration: encoderDuration,
+	}
+	switch strings.ToLower(c.Type) {
+	case "", "err":
+		return NewRsyslogEncoder(encoderConfig, appName), nil
+	case "access":
+		return NewRsyslogAccessEncoder(encoderConfig, appName), nil
+	default:
+		return nil, fmt.Errorf("unknown rsyslog type encoding %#v", c.Type)
+	}
 }
 
 func (c *Config) build(checkOnly bool) (*zap.Logger, error) {
