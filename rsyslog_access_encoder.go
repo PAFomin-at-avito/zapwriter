@@ -77,7 +77,7 @@ func (enc RsyslogAccessEncoder) EncodeEntry(ent zapcore.Entry, fields []zapcore.
 	finalFields := make([]zapcore.Field, 0, len(fields))
 	for _, field := range fields {
 		switch field.Key {
-		case "handler", "carbonapi_uuid", "peer_ip":
+		case "handler", "carbonapi_uuid", "peer_ip", "some_headers":
 			// String
 			final.AddString(field.Key, field.String)
 		case "targets", "metrics":
